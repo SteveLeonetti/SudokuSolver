@@ -1,14 +1,16 @@
 fileFormatVersion: 2
 guid: 07b5714bc2cb5d342b6472ce636122db
-timeCreated: 1510184801
-licenseType: Free
 MonoImporter:
+  externalObjects: {}
   serializedVersion: 2
   defaultReferences:
   - canvas: {instanceID: 0}
   - SudokuNode: {fileID: 1529739576379860, guid: 477c1e7507148114ea2635cef098afc1,
-      type: 2}
-  - camera: {instanceID: 0}
+      type: 3}
+  - SolveButton: {fileID: 1119740845691926, guid: 7033b19ac6de0d14bbd8ef28e43f40cb,
+      type: 3}
+  - Camera: {instanceID: 0}
+  - Control: {instanceID: 0}
   executionOrder: 0
   icon: {instanceID: 0}
   userData: 

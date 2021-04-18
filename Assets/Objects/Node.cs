@@ -1,4 +1,5 @@
-﻿using UnityEngine;
+﻿using System;
+using UnityEngine;
 
 /// <summary>
 /// Storage of each Cell/Node the user can type into.
@@ -8,6 +9,7 @@ public class Node
 {
     public GameObject textField; // Textbox for each Node
     private Node nextNode;
+    private Node previousNode;
 
     public Node()
     {
@@ -22,12 +24,24 @@ public class Node
     {
         nextNode = n;
     }
+    
+    public void SetPreviousNode(Node n)
+    {
+        previousNode = n;
+    }
 
     public Node GetNextNode()
     {
         if (nextNode == null)
             return null;
         return nextNode;
+    }
+
+    public Node GetPreviousNode()
+    {
+        if (previousNode == null)
+            return null;
+        return previousNode;
     }
 
     public override string ToString()

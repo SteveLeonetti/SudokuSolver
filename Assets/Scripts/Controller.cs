@@ -11,6 +11,7 @@ public class Controller : MonoBehaviour
     private Node focusedNode;
     private Node[,] gridNodes;
     private bool leftMouseClicked = false;
+    private bool shiftPressed = false;
 
     public void SendGrid(Node[,] grid)
     {
@@ -19,13 +20,14 @@ public class Controller : MonoBehaviour
 
     public void PrintGrid(int[,] grid)
     {
-        for (int y = 0; y < 9; y++)
+        for (int column = 0; column < grid.GetLength(1); column++)
         {
-            for (int x = 0; x < 9; x++)
+            for (int row = 0; row < grid.GetLength(0); row++)
             {
                 //
                 //
-                gridNodes[x, y].textField.GetComponent<InputField>().text = grid[x, y].ToString();
+                if (grid[row, column] > 0)
+                    gridNodes[row, column].textField.GetComponent<InputField>().text = grid[row, column].ToString();
                 //
                 //
             }
@@ -54,6 +56,13 @@ public class Controller : MonoBehaviour
             }
 
             // Check for key presses
+
+            if (Input.GetKeyDown(KeyCode.LeftShift) || Input.GetKeyDown(KeyCode.RightShift))
+                shiftPressed = true;
+
+            if (Input.GetKeyUp(KeyCode.LeftShift) || Input.GetKeyUp(KeyCode.RightShift))
+                shiftPressed = false;
+
             if (Input.GetMouseButtonDown(0))
             {
                 leftMouseClicked = true;
@@ -62,7 +71,6 @@ public class Controller : MonoBehaviour
             // Checks for Tab pressed
             if (Input.GetKeyDown(KeyCode.Tab))
             {
-
                 if (focusedBox == null)
                 {
                     focusedNode = gridNodes[0, 0];
@@ -71,14 +79,30 @@ public class Controller : MonoBehaviour
                 }
                 else
                 {
-                    focusedNode = focusedNode.GetNextNode();
-                    focusedBox = focusedNode.textField;
-                    focusedBox.GetComponent<InputField>().Select();
+                    if (shiftPressed)
+                    {
+                        focusedNode = focusedNode.GetPreviousNode();
+                        focusedBox = focusedNode.textField;
+                        focusedBox.GetComponent<InputField>().Select();
+                    }
+                    else
+                    {
+                        focusedNode = focusedNode.GetNextNode();
+                        focusedBox = focusedNode.textField;
+                        focusedBox.GetComponent<InputField>().Select();
+                    }
                 }
             }
 
             if (Input.GetKeyDown(KeyCode.Return))
             {
+                if (shiftPressed)
+                {
+                    Test.Start(this);
+
+                    return;
+                }
+
                 SNode[,] sudokuBoard = new SNode[9, 9];
 
                 // Fill board double loop
@@ -98,15 +122,24 @@ public class Controller : MonoBehaviour
                             else
                                 sudokuBoard[x, y] = new SNode();
                         }
+
+                        sudokuBoard[x, y].rowIndex = y;
+                        sudokuBoard[x, y].columnIndex = x;
                         //
                         //
                     }
                 }
 
-                PrintGrid(Solver.Solve(sudokuBoard, 9, 9));
+                int[,] grid = Solver.Solve(sudokuBoard, this);
+                PrintGrid(grid);
             }
         }
 
-        // Exempt from code
+        // Exempt from code, don't put code here
+    }
+
+    public void PrintStatement(string statement)
+    {
+        print(statement);
     }
 }
