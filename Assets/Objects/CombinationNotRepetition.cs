@@ -5,7 +5,6 @@
 /// <typeparam name="T"></typeparam>
 public partial class CombinationNoRepetition<T> : Combination<T>
 {
-
     /// <summary>
     /// Constructs the fully functioning Permutation set.
     /// </summary>
@@ -21,6 +20,9 @@ public partial class CombinationNoRepetition<T> : Combination<T>
     /// <returns></returns>
     public OrderedSet<T> IterateNext()
     {
+        if (set.Count == 0)
+            return null;
+
         iteration++;
         #region StarterSet
         if (iteration == 0)

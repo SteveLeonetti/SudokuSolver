@@ -5,10 +5,11 @@ using UnityEngine;
 public class SudokuBoard
 {
     public SNode[,] Sudoku;
-    public Dictionary<int, Dictionary<int, SNode>> Rows;
-    public Dictionary<int, Dictionary<int, SNode>> Columns;
-    public Dictionary<int, Dictionary<int, SNode>> Boxes;
-    public Dictionary<string, Dictionary<int, SNode>> Sets;
+
+    public OrderedSet<SudokuSet> Rows;
+    public OrderedSet<SudokuSet> Columns;
+    public OrderedSet<SudokuSet> Boxes;
+    public OrderedSet<SudokuSet> Sets;
 
     /// <summary>
     ///  Construct Sudoku Board data from the SNode objects by placing them in their relative sets (row, column, and box that they belong to)
@@ -16,12 +17,26 @@ public class SudokuBoard
     /// <param name="_sudoku"></param>
     public SudokuBoard(SNode[,] _sudoku)
     {
-        Rows = new Dictionary<int, Dictionary<int, SNode>>();
-        Columns = new Dictionary<int, Dictionary<int, SNode>>();
-        Boxes = new Dictionary<int, Dictionary<int, SNode>>();
-        Sets = new Dictionary<string, Dictionary<int, SNode>>();
+        Rows = new OrderedSet<SudokuSet>();
+        Columns = new OrderedSet<SudokuSet>();
+        Boxes = new OrderedSet<SudokuSet>();
+        Sets = new OrderedSet<SudokuSet>();
 
         Sudoku = _sudoku;
+
+        applySetRelationships();
+
+        unifySets();
+    }
+
+    public SudokuBoard(string csv)
+    {
+        Rows = new OrderedSet<SudokuSet>();
+        Columns = new OrderedSet<SudokuSet>();
+        Boxes = new OrderedSet<SudokuSet>();
+        Sets = new OrderedSet<SudokuSet>();
+
+        Sudoku = ConvertFromCSV(csv);
 
         applySetRelationships();
 
@@ -34,36 +49,48 @@ public class SudokuBoard
     private void applySetRelationships()
     {
         #region Load Rows
-        for (int row = 1; row <= 9; row++)
+        for (int index = 1; index <= 9; index++)
         {
-            Rows.Add(row, new Dictionary<int, SNode>());
+            Row currentRow = new Row(index);
+            currentRow.UnsolvedValues.AddRange(new int[] { 1, 2, 3, 4, 5, 6, 7, 8, 9 });
             for (int node = 1; node <= 9; node++)
             {
                 //
                 //
-                SNode sNode = Sudoku[node - 1, row - 1];
-                Rows[row].Add(node, sNode);
-                Sudoku[node - 1, row - 1].Row = Rows[row];
+                SNode sNode = Sudoku[node - 1, index - 1];
+                currentRow.Add(sNode);
+                sNode.Row = currentRow;
+
+                if (sNode.Value != 0)
+                    currentRow.ValueSolved(sNode.Value);
                 //
                 //
             }
+
+            Rows.Add(currentRow);
         }
         #endregion
 
         #region Load Columns
-        for (int column = 1; column <= 9; column++)
+        for (int index = 1; index <= 9; index++)
         {
-            Columns.Add(column, new Dictionary<int, SNode>());
+            Column currentColumn = new Column(index);
+            currentColumn.UnsolvedValues.AddRange(new int[] { 1, 2, 3, 4, 5, 6, 7, 8, 9 });
             for (int node = 1; node <= 9; node++)
             {
                 //
                 //
-                SNode sNode = Sudoku[column - 1, node - 1];
-                Columns[column].Add(node, sNode);
-                Sudoku[column - 1, node - 1].Column = Columns[column];
+                SNode sNode = Sudoku[index - 1, node - 1];
+                currentColumn.Add(sNode);
+                sNode.Column = currentColumn;
+
+                if (sNode.Value != 0)
+                    currentColumn.ValueSolved(sNode.Value);
                 //
                 //
             }
+
+            Columns.Add(currentColumn);
         }
         #endregion
 
@@ -71,10 +98,10 @@ public class SudokuBoard
         int startRow = 0;
         int startColumn = 0;
 
-        for (int box = 1; box <= 9; box++)
+        for (int index = 1; index <= 9; index++)
         {
-            Boxes.Add(box, new Dictionary<int, SNode>());
-        
+            Box currentBox = new Box(index);
+            currentBox.UnsolvedValues.AddRange(new int[] { 1, 2, 3, 4, 5, 6, 7, 8, 9 });
             for (int down = 0; down < 3; down++)
             {
                 for (int right = 0; right < 3; right++)
@@ -82,12 +109,24 @@ public class SudokuBoard
                     //
                     //
                     SNode sNode = Sudoku[startColumn + right, startRow + down];
-                    Boxes[box].Add(1 + (3 * down) + right, sNode);
-                    Sudoku[startColumn + right, startRow + down].Box = Boxes[box];
+                    currentBox.Add(sNode);
+                    sNode.Box = currentBox;
+
+                    if (sNode.Value != 0)
+                        currentBox.ValueSolved(sNode.Value);
                     //
                     //
                 }
             }
+
+            Boxes.Add(currentBox);
+
+            currentBox.AddColumn(currentBox[0].Column);
+            currentBox.AddRow(currentBox[0].Row);
+            currentBox.AddColumn(currentBox[4].Column);
+            currentBox.AddRow(currentBox[4].Row);
+            currentBox.AddColumn(currentBox[8].Column);
+            currentBox.AddRow(currentBox[8].Row);
 
             // Sets up the starter indices for each box
             if (startColumn == 6)
@@ -106,19 +145,70 @@ public class SudokuBoard
     /// </summary>
     private void unifySets()
     {
-        #region Union of all [row, column, box] sets into Dictionary called 'sets'
-        foreach (KeyValuePair<int, Dictionary<int, SNode>> kvp in Rows)
-        {
-            Sets.Add("r" + kvp.Key, kvp.Value);
-        }
-        foreach (KeyValuePair<int, Dictionary<int, SNode>> kvp in Columns)
-        {
-            Sets.Add("c" + kvp.Key, kvp.Value);
-        }
-        foreach (KeyValuePair<int, Dictionary<int, SNode>> kvp in Boxes)
-        {
-            Sets.Add("b" + kvp.Key, kvp.Value);
-        }
+        #region Union of all [row, column, box] sets into OrderedSet called 'sets'
+        foreach (Row row in Rows)
+            Sets.Add(row);
+
+        foreach (Column column in Columns)
+            Sets.Add(column);
+
+        foreach (Box box in Boxes)
+            Sets.Add(box);
         #endregion
+    }
+
+    private SNode[,] ConvertFromCSV(string csv)
+    {
+        SNode[,] conversion = new SNode[9, 9];
+        OrderedSet<int> possibles = new OrderedSet<int>();
+
+        string sValue;
+        string sPossibles;
+        string currentNode;
+
+        for (int c = 0; c < 9; c++)
+        {
+            for(int r = 0;  r < 9; r++)
+            {
+                if (csv.IndexOf(",") == 0)
+                    csv = csv.Substring(1);
+                currentNode = csv.Substring(0, csv.IndexOf(','));
+                sValue = currentNode.Substring(0, currentNode.IndexOf(':'));
+                int value = int.Parse(sValue);
+
+                sPossibles = currentNode.Substring(currentNode.IndexOf(':') + 1);
+                foreach (char ch in sPossibles)
+                    possibles.Add(int.Parse(ch.ToString()));
+
+                if (value != 0)
+                    conversion[c, r] = new SNode(value);
+                else
+                    conversion[c, r] = new SNode(possibles);
+
+                csv = csv.Remove(0, csv.IndexOf(','));
+            }
+        }
+
+        return conversion;
+    }
+
+    public override string ToString()
+    {
+        string csv = "";
+        for (int c = 0; c < 9; c++)
+        {
+            for (int r = 0; r < 9; r++)
+            {
+                csv += Sudoku[c, r].Value.ToString();
+                string possibles = ":";
+                foreach (int i in Sudoku[c, r].Possibles)
+                    possibles += i.ToString();
+
+                csv += possibles;
+                csv += ",";
+            }
+        }
+
+        return csv;
     }
 }

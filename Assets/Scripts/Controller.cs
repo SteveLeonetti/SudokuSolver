@@ -8,12 +8,12 @@ using System.Collections.Generic;
 public class Controller : MonoBehaviour
 {
     private GameObject focusedBox;
-    private Node focusedNode;
-    private Node[,] gridNodes;
+    private UINode focusedNode;
+    private UINode[,] gridNodes;
     private bool leftMouseClicked = false;
     private bool shiftPressed = false;
 
-    public void SendGrid(Node[,] grid)
+    public void SendGrid(UINode[,] grid)
     {
         gridNodes = grid;
     }
@@ -41,7 +41,7 @@ public class Controller : MonoBehaviour
             // Next Update Cycle, check node
             if (leftMouseClicked)
             {
-                foreach (Node node in gridNodes)
+                foreach (UINode node in gridNodes)
                 {
                     if (node.textField.GetComponent<InputField>().isFocused)
                     {
@@ -51,23 +51,20 @@ public class Controller : MonoBehaviour
                         break;
                     }
                 }
-
+    
                 leftMouseClicked = false;
             }
-
+    
             // Check for key presses
-
+    
             if (Input.GetKeyDown(KeyCode.LeftShift) || Input.GetKeyDown(KeyCode.RightShift))
                 shiftPressed = true;
-
-            if (Input.GetKeyUp(KeyCode.LeftShift) || Input.GetKeyUp(KeyCode.RightShift))
-                shiftPressed = false;
-
+    
             if (Input.GetMouseButtonDown(0))
             {
                 leftMouseClicked = true;
             }
-
+    
             // Checks for Tab pressed
             if (Input.GetKeyDown(KeyCode.Tab))
             {
@@ -93,49 +90,59 @@ public class Controller : MonoBehaviour
                     }
                 }
             }
-
+    
             if (Input.GetKeyDown(KeyCode.Return))
             {
-                if (shiftPressed)
-                {
-                    Test.Start(this);
+                RunSolver();
+            }
+        } //
+    
+        if (Input.GetKeyUp(KeyCode.LeftShift) || Input.GetKeyUp(KeyCode.RightShift))
+            shiftPressed = false;
+    
+        // Exempt from code, don't put code here
+    }
 
-                    return;
-                }
+    public void RunSolver()
+    {
+        OrderedSet<int> sudokuNumbers = new OrderedSet<int>();
+        foreach (int value in new int[] { 1, 2, 3, 4, 5, 6, 7, 8, 9 })
+            sudokuNumbers.Add(value);
 
-                SNode[,] sudokuBoard = new SNode[9, 9];
+        if (shiftPressed)
+        {
+            Test.Start(this);
 
-                // Fill board double loop
-                for (int y = 0; y < 9; y++)
-                {
-                    for (int x = 0; x < 9; x++)
-                    {
-                        //
-                        //
-                        if (gridNodes[x, y].textField.GetComponent<InputField>().text.Equals(""))
-                            sudokuBoard[x, y] = new SNode();
-                        else
-                        {
-                            int value;
-                            if (int.TryParse(gridNodes[x, y].textField.GetComponent<InputField>().text, out value))
-                                sudokuBoard[x, y] = new SNode(value);
-                            else
-                                sudokuBoard[x, y] = new SNode();
-                        }
+            return;
+        }
 
-                        sudokuBoard[x, y].rowIndex = y;
-                        sudokuBoard[x, y].columnIndex = x;
-                        //
-                        //
-                    }
-                }
+        SNode[,] sudokuBoard = new SNode[9, 9];
 
-                int[,] grid = Solver.Solve(sudokuBoard, this);
-                PrintGrid(grid);
+        // Fill board double loop
+        for (int y = 0; y < 9; y++)
+        {
+            for (int x = 0; x < 9; x++)
+            {
+                //
+                //
+                SNode sNode;
+                int value;
+                if (int.TryParse(gridNodes[x, y].textField.GetComponent<InputField>().text, out value))
+                    sNode = new SNode(value);
+                else
+                    sNode = new SNode(sudokuNumbers);
+
+                sNode.rowIndex = y;
+                sNode.columnIndex = x;
+
+                sudokuBoard[x, y] = sNode;
+                //
+                //
             }
         }
 
-        // Exempt from code, don't put code here
+        int[,] grid = Solver.Solve(sudokuBoard, this);
+        PrintGrid(grid);
     }
 
     public void PrintStatement(string statement)
