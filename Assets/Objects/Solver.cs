@@ -20,6 +20,7 @@ public static class Solver
     //static SudokuBoard backup;
     static SNode guessedNode;
     static int guessedValue;
+    static int failCount = 0;
 
     //
     static PushableList<Assignment> untested = new PushableList<Assignment>();
@@ -47,51 +48,68 @@ public static class Solver
         {
             // Precedence 0: Solve spaces when only 1 value is possible.
             if (NakedSingle())
+            {
+                failCount = 0;
                 continue;
+            }
 
             // Precedence 1: Remove some possibles with this solve technique.  Line/Box Reduction.
             if (LineBoxReduction())
+            {
+                failCount = 0;
                 continue;
+            }
 
             // Precedence 2: Remove some possibles with this solve technique.  Naked, Single, Pair, Triplet, Quadruplet, etc...
             if (SetLoop())
+            {
+                failCount = 0;
                 continue;
+            }
 
             // Precedence 3: Remove some possibles with this solve technique.  XWing[Row->Col] or XWing[Col->Row]
             if (XWingLoop())
+            {
+                failCount = 0;
                 continue;
+            }
 
             // Precedence 4: Guess a number into a SNode.  Hope that it causes contradiction or completed the puzzle.
-            if (!guessPlaced)
-            {
-                BackupSudokuBoard();
-                GuessValue();
-            }
-            else
-            {
-                if (Contradiction())
-                {
-                    attemptedGuesses.Clear();
+            //if (!guessPlaced)
+            //{
+            //    BackupSudokuBoard();
+            //    GuessValue();
+            //}
+            //else
+            //{
+            //    if (Contradiction())
+            //    {
+            //        attemptedGuesses.Clear();
+            //
+            //        RetractSudokuBoardState();
+            //
+            //        guessedNode = board.Sudoku[guessedNode.columnIndex, guessedNode.rowIndex];
+            //
+            //        guessedNode.Possibles.Remove(guessedValue);
+            //    }
+            //    else    // we didn't gain any knowledge....try a different number on same SNode or different SNode entirely.
+            //    {
+            //        string coord = "" + guessedNode.columnIndex + guessedNode.rowIndex;
+            //
+            //        if (!attemptedGuesses.ContainsKey(coord))
+            //            attemptedGuesses.Add(coord, new OrderedSet<int>());
+            //
+            //        attemptedGuesses[coord].Add(guessedValue);
+            //
+            //        RetractSudokuBoardState();
+            //        GuessValue();
+            //    }
+            //}
 
-                    RetractSudokuBoardState();
+            if (failCount > 2)
+                return SNode.ConvertToOutput(board);
 
-                    guessedNode = board.Sudoku[guessedNode.columnIndex, guessedNode.rowIndex];
-
-                    guessedNode.Possibles.Remove(guessedValue);
-                }
-                else    // we didn't gain any knowledge....try a different number on same SNode or different SNode entirely.
-                {
-                    string coord = "" + guessedNode.columnIndex + guessedNode.rowIndex;
-
-                    if (!attemptedGuesses.ContainsKey(coord))
-                        attemptedGuesses.Add(coord, new OrderedSet<int>());
-
-                    attemptedGuesses[coord].Add(guessedValue);
-
-                    RetractSudokuBoardState();
-                    GuessValue();
-                }
-            }
+            failCount++;
         }
 
         if (controller != null)
