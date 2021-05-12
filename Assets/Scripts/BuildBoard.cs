@@ -12,6 +12,7 @@ public class BuildBoard : MonoBehaviour
     private static Texture2D _staticRectTexture;
     private static GUIStyle _staticRectStyle;
 
+    private Vector2 boardLocation = new Vector2(0, 0);
     private UINode[,] numBoxGrid = null;
     private int width = 9;
     private int height = 9;
@@ -19,8 +20,8 @@ public class BuildBoard : MonoBehaviour
     // Use this for initialization
     void Start()
     {
+        // Draw Text Boxes
         UINode prevNode = new UINode();
-        Camera.transform.position = new Vector3(4 / 3f, -(8 / 3f), -10);
         numBoxGrid = new UINode[width, height];
         for (int y = 0; y < height; y++)
         {
@@ -35,6 +36,7 @@ public class BuildBoard : MonoBehaviour
                 go.name = name;
                 numBoxGrid[x, y] = newNode;
                 numBoxGrid[x, y].textField.transform.position = new Vector3(x / 3f - 1.35f, -(y / 3f) + 1.35f, 0);
+                //numBoxGrid[x, y].textField.transform.position = new Vector3(x / 3f, -(y / 3f), 0);
                 if (!(x == 0 && y == 0))
                 {
                     prevNode.SetNextNode(numBoxGrid[x, y]);
@@ -46,40 +48,50 @@ public class BuildBoard : MonoBehaviour
             }
         }
 
+        Camera.transform.position = new Vector3(4 / 3f, -(8 / 3f), -10);
+        //Camera.transform.position = new Vector3(numBoxGrid[4, 4].textField.transform.position.x, numBoxGrid[4, 4].textField.transform.position.y, -10);
+
+        boardLocation = numBoxGrid[0, 0].textField.transform.position;  // retrieves location of board
+
         numBoxGrid[width - 1, height - 1].SetNextNode(numBoxGrid[0, 0]);
         numBoxGrid[0, 0].SetPreviousNode(numBoxGrid[width - 1, height - 1]);
 
-        // Build Button
+        // Draw Button
 
 
         // Build Controller
         Control = GameObject.FindGameObjectWithTag("GameController");
         Control.AddComponent<Controller>();
         Control.GetComponent<Controller>().SendGrid(numBoxGrid);
-
-        // Build Dividers
-        //GUIDrawRect(new Rect(new Vector2(3, 3), new Vector2(8, 100)), Color.black);
 	}
 
     public static void GUIDrawRect(Rect divider, Color color)
     {
         if (_staticRectTexture == null)
-        {
             _staticRectTexture = new Texture2D(1, 1);
-        }
 
         if (_staticRectStyle == null)
-        {
             _staticRectStyle = new GUIStyle();
-        }
 
         _staticRectTexture.SetPixel(0, 0, color);
         _staticRectTexture.Apply();
 
         _staticRectStyle.normal.background = _staticRectTexture;
 
-        //GUI.Box(divider, GUIContent.none, _staticRectStyle);
+        GUI.Box(divider, GUIContent.none, _staticRectStyle);
+    }
 
-
+    private void OnGUI()
+    {
+        // Build Dividers
+        boardLocation = new Vector2(1613, 774);
+        Rect leftline = new Rect(boardLocation + new Vector2(192, 0), new Vector2(10, 605));
+        GUIDrawRect(leftline, Color.white);
+        Rect rightline = new Rect(boardLocation + new Vector2(406, 0), new Vector2(10, 605));
+        GUIDrawRect(rightline, Color.white);
+        Rect upperline = new Rect(boardLocation + new Vector2(0, 188), new Vector2(605, 10));
+        GUIDrawRect(upperline, Color.white);
+        Rect lowerline = new Rect(boardLocation + new Vector2(0, 406), new Vector2(605, 10));
+        GUIDrawRect(lowerline, Color.white);
     }
 }
