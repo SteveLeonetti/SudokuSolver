@@ -1,89 +1,132 @@
-﻿public class SNode
+﻿using System;
+using System.Collections.Generic;
+
+public class SNode
 {
-    public int value = 0;
-    public bool[] possibles;
-    public int possRem = 9;
-    public bool isSolved;
+    public int rowIndex = 0;
+    public int columnIndex = 0;
 
-    public SNode[] row;
-    public SNode[] column;
-    public SNode[] box;
+    public int Value = 0;
+    public OrderedSet<int> Possibles;
+    public bool IsSolved;
 
-    public SNode()
+    public Row Row { get; set; }
+
+    public Column Column { get; set; }
+
+    public Box Box { get; set; }
+
+    #region Constructors
+    public SNode(OrderedSet<int> _sudokuNumbers)
     {
-        value = 0;
-        possibles = new bool[] {true, true, true, true, true, true, true, true, true};
-        possRem = 9;
-        isSolved = false;
-    }
-
-    public SNode(bool[] poss)
-    {
-        value = 0;
-        possibles = poss;
-
-        foreach (bool b in possibles)
-        {
-            if (b)
-                possRem++;
-        }
-
-        isSolved = false;
+        Value = 0;
+        Possibles = new OrderedSet<int>();
+        foreach (int value in _sudokuNumbers)
+            Possibles.Add(value);
+        IsSolved = false;
     }
 
     public SNode(int v)
     {
-        value = v;
-        possibles = null;
-        possRem = 0;
-        isSolved = true;
+        Value = v;
+        Possibles = new OrderedSet<int>();
+        IsSolved = true;
     }
+    #endregion
 
-    public void SetRow(SNode[] r)
+    #region Application of values
+    /// <summary>
+    /// Applies the value to the node when it is the only possible result.
+    /// </summary>
+    /// <param name="n">node</param>
+    /// <param name="v">value</param>
+    public bool ApplyValue(int v = 0)
     {
-        row = r;
-    }
+        // Set value on SNode
+        if (v == 0 && Possibles.Count == 1)
+            v = Possibles[0];
 
-    public void SetColumn(SNode[] c)
-    {
-        column = c;
-    }
+        Possibles.Clear();
+        Value = v;
+        IsSolved = true;
+        Row.ValueSolved(v);
+        Column.ValueSolved(v);
+        Box.ValueSolved(v);
 
-    public void SetBox(SNode[] b)
-    {
-        box = b;
-    }
+        if (v < 1 || v > 9)
+            return false;
 
-    public bool IncludesPossibles(bool[] a)
-    {
-
-        return true;
-    }
-
-    public static int[,] ConvertToOutput(SNode[,] snode, int width, int height)
-    {
-        int[,] board = new int[width, height];
-        
-        for (int yIndex = 0; yIndex < height; yIndex++)
+        // Adjust all nodes in row, column, and box [based on this change].
+        foreach (SNode sNode in Row.Trim())
         {
-            for (int xIndex = 0; xIndex < width; xIndex++)
-            {
-                board[xIndex, yIndex] = snode[xIndex, yIndex].value;
-            }
+            // Checking if it's also already false, if so, we don't enter this if
+            if (sNode != this && sNode.Possibles.Contains(Value))
+                sNode.Possibles.Remove(v);
         }
 
-        return board;
+        foreach (SNode sNode in Column.Trim())
+        {
+            // Checking if it's also already false, if so, we don't enter this if
+            if (sNode != this && sNode.Possibles.Contains(Value))
+                sNode.Possibles.Remove(v);
+        }
+
+        foreach (SNode sNode in Box.Trim())
+        {
+            // Checking if it's also already false, if so, we don't enter this if
+            if (sNode != this && sNode.Possibles.Contains(Value))
+                sNode.Possibles.Remove(v);
+        }
+
+        return true;
+    } // ApplyValue()
+    #endregion
+
+    #region Object Functions
+    public int PossiblesCount()
+    {
+        return Possibles.Count;
+    }
+
+    public SNode DeepCopy()
+    {
+        SNode copy = (SNode)MemberwiseClone();
+
+        copy.Possibles = new OrderedSet<int>();
+
+        foreach (int value in this.Possibles)
+            copy.Possibles.Add(value);
+
+        return copy;
     }
 
     public string PrintPossibles()
     {
         string possiblesString = "";
 
-        for (int i = 0; i < 9; i++)
-        {
-            possiblesString += "(" + i + ": " + possibles[i].ToString() + "); ";
-        }
+        foreach (int value in Possibles)
+            possiblesString += "(" + value.ToString() + "); ";
 
         return possiblesString;
     }
+    #endregion
+
+    #region Static Functions
+    public static int[,] ConvertToOutput(SudokuBoard sBoard)
+    {
+        int setSize = sBoard.Sudoku.GetLength(0);
+        int[,] board = new int[setSize, setSize];
+
+        for (int yIndex = 0; yIndex < setSize; yIndex++)
+        {
+            for (int xIndex = 0; xIndex < setSize; xIndex++)
+            {
+                if (sBoard.Sudoku[xIndex, yIndex].Value > 0)
+                    board[xIndex, yIndex] = sBoard.Sudoku[xIndex, yIndex].Value;
+            }
+        }
+
+        return board;
+    }
+    #endregion
 }

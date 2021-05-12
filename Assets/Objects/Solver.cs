@@ -1,533 +1,866 @@
-﻿
+﻿using Assets.Objects;
+using System;
 using System.Collections.Generic;
+
 /// <summary>
 /// 1. Check single boxes if they can only be 1 value. (Repeat until no progress)
 /// 2. Check sets (row, column, box) if a single box in that set can be a certain value. (Regress to Stage 1 if successful)
-/// 3. Check for restrictive sets within a set (row, column, box). (Regress to Stage 1 if successful)
+/// 3. Check for advanced techniques within a set (row, column, box). (Regress to Stage 1 if successful)
 /// </summary>
 public static class Solver
 {
-    static int width;
-    static int height;
-    static SNode[,] sudoku;
+    static int setSize;
+    static SudokuBoard board;
+    static OrderedSet<int> sudokuNumbers;
+
+    static Dictionary<string, OrderedSet<int>> attemptedGuesses;
+    static OrderedSet<SNode> sNodesWithLeastPossibles;
+    static bool guessPlaced = false;
+    static string backup;
+    //static SudokuBoard backup;
+    static SNode guessedNode;
+    static int guessedValue;
+
+    //
+    static PushableList<Assignment> untested = new PushableList<Assignment>();
+    static PushableList<Assignment> tested = new PushableList<Assignment>();
+
+    static PushableList<Assignment> testing = new PushableList<Assignment>();
+    //
+
+    static Controller controller;
 
     /// <summary>
-    /// Solves the puzzle as best it can
+    /// Solves the puzzle as best it can.  This is the method portraying the logical order of solving.
     /// </summary>
     /// <param name="s"></param>
-    /// <param name="w"></param>
-    /// <param name="h"></param>
+    /// <param name="c"></param>
     /// <returns>integer type board</returns>
-    public static int[,] Solve(SNode[,] s, int w, int h)
+    public static int[,] Solve(SNode[,] s, Controller c)
     {
-        int maxLoopCount = 500;
-        int curCount = 0;
+        //untested.Remove(tested[0]);
+        controller = c;
 
-        Load(s, w, h); // Loads initial state with predetermined easy "not-possibles"
+        Load(s); // Loads initial state with predetermined obvious "not-possibles"
 
         while (!IsSolved())
         {
-            if (curCount >= maxLoopCount)
-                break;
-            curCount++;
+            // Precedence 0: Solve spaces when only 1 value is possible.
+            if (NakedSingle())
+                continue;
 
-            for (int y = 0; y < h; y++)
+            // Precedence 1: Remove some possibles with this solve technique.  Line/Box Reduction.
+            if (LineBoxReduction())
+                continue;
+
+            // Precedence 2: Remove some possibles with this solve technique.  Naked, Single, Pair, Triplet, Quadruplet, etc...
+            if (SetLoop())
+                continue;
+
+            // Precedence 3: Remove some possibles with this solve technique.  XWing[Row->Col] or XWing[Col->Row]
+            if (XWingLoop())
+                continue;
+
+            // Precedence 4: Guess a number into a SNode.  Hope that it causes contradiction or completed the puzzle.
+            if (!guessPlaced)
             {
-                for (int x = 0; x < w; x++)
+                BackupSudokuBoard();
+                GuessValue();
+            }
+            else
+            {
+                if (Contradiction())
                 {
-                    //
-                    //
-                    if (sudoku[x, y].possRem == 1)
-                        OnlyPossibleOnNode(x, y);
-                    //
-                    //
+                    attemptedGuesses.Clear();
+
+                    RetractSudokuBoardState();
+
+                    guessedNode = board.Sudoku[guessedNode.columnIndex, guessedNode.rowIndex];
+
+                    guessedNode.Possibles.Remove(guessedValue);
+                }
+                else    // we didn't gain any knowledge....try a different number on same SNode or different SNode entirely.
+                {
+                    string coord = "" + guessedNode.columnIndex + guessedNode.rowIndex;
+
+                    if (!attemptedGuesses.ContainsKey(coord))
+                        attemptedGuesses.Add(coord, new OrderedSet<int>());
+
+                    attemptedGuesses[coord].Add(guessedValue);
+
+                    RetractSudokuBoardState();
+                    GuessValue();
                 }
             }
-
-            for (int i = 0; i < h; i++)
-            {
-                OnlyPossibleInSet(sudoku[i, i].row);
-                OnlyPossibleInSet(sudoku[i, i].column);
-            }
-
-            OnlyPossibleInSet(sudoku[0, 0].box);
-            OnlyPossibleInSet(sudoku[0, 3].box);
-            OnlyPossibleInSet(sudoku[0, 6].box);
-
-            OnlyPossibleInSet(sudoku[3, 0].box);
-            OnlyPossibleInSet(sudoku[3, 3].box);
-            OnlyPossibleInSet(sudoku[3, 6].box);
-
-            OnlyPossibleInSet(sudoku[6, 0].box);
-            OnlyPossibleInSet(sudoku[6, 3].box);
-            OnlyPossibleInSet(sudoku[6, 6].box);
-
-            if (!CheckLockedSets())
-            {
-
-            }
-            // Add more logic later
-            /* Next idea: save SNode[*,*] states, and make guesses if neccesary */
-
-
-
-
-            //
-            //
-
-
-
         }
 
-        return SNode.ConvertToOutput(sudoku, width, height);
-    }
+        if (controller != null)
+        {
+            string output = "Puzzle Solved!";
+            controller.PrintStatement(output);
+        }
+
+        return SNode.ConvertToOutput(board);
+    } // Solve()
+
 
     /// <summary>
     /// Loads data about sudoku board.
     /// </summary>
     /// <param name="s">Sudoku Board</param>
-    /// <param name="w">Width</param>
-    /// <param name="h">Height</param>
-    private static void Load(SNode[,] s, int w, int h)
+    [System.Diagnostics.CodeAnalysis.SuppressMessage("Performance", "CA1814:Prefer jagged arrays over multidimensional", Justification = "<Pending>")]
+    private static void Load(SNode[,] s)
     {
-        sudoku = s;
-        width = w;
-        height = h;
+        setSize = s.GetLength(0);
+        sudokuNumbers = new OrderedSet<int>();
+        attemptedGuesses = new Dictionary<string, OrderedSet<int>>();
 
-        for (int y = 0; y < h; y++)
-        {
-            for (int x = 0; x < w; x++)
-            {
-                //
-                //
-                sudoku[x, y].SetRow(LoadRow(x, y));
-                sudoku[x, y].SetColumn(LoadColumn(x, y));
-                sudoku[x, y].SetBox(LoadBox(x, y));
-                CheckImpossibles(x, y);
-                //
-                //
-            }
-        }
+        for (int i = 1; i <= setSize; i++)
+            sudokuNumbers.Add(i);
+
+        board = new SudokuBoard(s);
+
+        foreach (SNode sNode in board.Sudoku)
+            CheckImpossibles(sNode);
     } // Load()
 
-    #region LoadSets
-
-    /// <summary>
-    /// Creates a Node[] of each node contained in the Row that contains the node of interest in it.
-    /// </summary>
-    /// <param name="y">Lock</param>
-    /// <returns>Row</returns>
-    private static SNode[] LoadRow(int x, int y)
-    {
-        SNode[] row = new SNode[width];
-        for (int i = 0; i < width; i++)
-            row[i] = sudoku[i, y];
-
-        return row;
-    }
-
-    /// <summary>
-    /// Creates a Node[] of each node contained in the Column that contains the node of interest in it.
-    /// </summary>
-    /// <param name="x">Lock</param>
-    /// <returns>Column</returns>
-    private static SNode[] LoadColumn(int x, int y)
-    {
-        SNode[] column = new SNode[height];
-        for (int i = 0; i < height; i++)
-            column[i] = sudoku[x, i];
-
-        return column;
-    }
-
-    /// <summary>
-    /// Creates a Node[] of each node contained in the Box that contains the node of interest in it.
-    /// </summary>
-    /// <param name="x">variable</param>
-    /// <param name="y">variable</param>
-    /// <returns>Box</returns>
-    private static SNode[] LoadBox(int x, int y)
-    {
-        SNode[] box = new SNode[(width / 3) * (height / 3)];
-
-        int boxX = x / 3;
-        int boxY = y / 3;
-        int i = 0;
-
-
-        for (int yTar = boxY * 3; yTar < (boxY + 1) * 3; yTar++)
-        {
-            for (int xTar = boxX * 3; xTar < (boxX + 1) * 3; xTar++)
-            {
-                //
-                //
-                box[i++] = sudoku[xTar, yTar];
-                //
-                //
-            }
-        }
-
-
-        return box;
-    }
-
-    #endregion
-    // done
-
     #region Check
-
     /// <summary>
     /// Checks nodes versus it's containing Row, Column, and Box to see what numbers it CAN'T be.
     /// Assigns false boolean to spaces in the bool[] named possibles for said node.
     /// </summary>
-    private static void CheckImpossibles(int x, int y)
+    private static void CheckImpossibles(SNode sNode)
     {
-        if (!sudoku[x, y].isSolved)
+        if (sNode.IsSolved)
+            sNode.ApplyValue(sNode.Value);
+        else
         {
-            foreach (SNode rn in sudoku[x, y].row)
+            #region Row
+            foreach (SNode relatedNode in sNode.Row)
             {
-                if (rn.isSolved)
+                if (relatedNode.Value > 0)
                 {
-                    if (rn.value > 0)
-                        sudoku[x, y].possibles[rn.value - 1] = false;
+                    if (sNode.Possibles.Contains(relatedNode.Value))
+                        sNode.Possibles.Remove(relatedNode.Value);
                 }
             }
-            foreach (SNode cn in sudoku[x, y].column)
+            #endregion
+
+            #region Column
+            foreach (SNode relatedNode in sNode.Column)
             {
-                if (cn.isSolved)
+                if (relatedNode.Value > 0)
                 {
-                    if (cn.value > 0)
-                        sudoku[x, y].possibles[cn.value - 1] = false;
-                }
-                    
-            }
-            foreach (SNode bn in sudoku[x, y].box)
-            {
-                if (bn.isSolved)
-                {
-                    if (bn.value > 0)
-                        sudoku[x, y].possibles[bn.value - 1] = false;
+                    if (sNode.Possibles.Contains(relatedNode.Value))
+                        sNode.Possibles.Remove(relatedNode.Value);
                 }
             }
+            #endregion
+
+            #region Box
+            foreach (SNode relatedNode in sNode.Box)
+            {
+                if (relatedNode.Value > 0)
+                {
+                    if (sNode.Possibles.Contains(relatedNode.Value))
+                        sNode.Possibles.Remove(relatedNode.Value);
+                }
+            }
+            #endregion
         }
     } // CheckImpossibles()
 
+    #region Guessing Logic
     /// <summary>
-    /// Checks if any set of n nodes, where the only values possible are those n number of values.
+    /// Stores data of the Sudoku Board while it's still 100% accurate with no guesses.
     /// </summary>
-    private static bool CheckLockedSets()
+    //private static void BackupSudokuBoard()
+    //{
+    //    SNode[,] b = new SNode[board.Columns.Count, board.Rows.Count];
+    //
+    //    for (int row = 0; row < board.Rows.Count; row++)
+    //    {
+    //        for (int column = 0; column < board.Columns.Count; column++)
+    //            b[column, row] = board.Sudoku[column, row].DeepCopy();
+    //    }
+    //
+    //    backup = new SudokuBoard(b);
+    //} // BackupSudokuBoard()
+
+    private static void BackupSudokuBoard()
     {
-        bool changeOccurred = false;
-
-        for (int y = 0; y < height; y++)
-        {
-            for (int x = 0; x < width; x++)
-            {
-                //
-                //
-                for (int i = 2; i < 4; i++)
-                {
-                    if (!changeOccurred)
-                        changeOccurred = CheckSet(sudoku[x, y].row, i);
-                    else
-                        CheckSet(sudoku[x, y].row, i);
-
-                    if (!changeOccurred)
-                        changeOccurred = CheckSet(sudoku[x, y].column, i);
-                    else
-                        CheckSet(sudoku[x, y].column, i);
-
-                    if (!changeOccurred)
-                        changeOccurred = CheckSet(sudoku[x, y].box, i);
-                    else
-                        CheckSet(sudoku[x, y].box, i);
-                }
-                //
-                //
-            }
-        }
-
-        return changeOccurred;
-    } // CheckLockedSets()
-
-    /// <summary>
-    /// Checks to see if 'count' number of nodes are the only nodes in the set that can be 'count' number of certain values.
-    /// If so, remove all possiblities of all other values.
-    /// Example: If Nodes (1, 4, 5) are the only nodes [in a row, column, or box] that can store the Values (3, 6, 8), then Node (1), which has a Possibility (1, 2, 3, 6, 8, 9),
-    /// is changed to Possibility (3, 6, 8), thus removing a up to a few possibilities off each of a few nodes, like 1, 2, and 9 were removed from this node.
-    /// </summary>
-    /// <param name="set"></param>
-    /// <param name="count"></param>
-    /// <returns></returns>
-    private static bool CheckSet(SNode[] set, int count)
-    {
-        bool changeOccurred = false;
-
-        int[] individualPossibilitiesCount = new int[9];
-        int indexStep = -1;
-
-        // Iterate through each number, if any count numbers are only able to be placed on the same number of nodes, remove all other possibles from those select nodes.
-        for (int valIndex = 0; valIndex < set.Length; valIndex++)
-        {
-            // Check for number of nodes that can be this value.  If equal to count, save it.
-            foreach (SNode sn in set)
-            {
-                if (!sn.isSolved && sn.possibles[valIndex])
-                    individualPossibilitiesCount[valIndex]++;
-            }
-        }
-
-        // Find out which indices in individualPossibilitiesCount that are equal to count (we don't know which SNodes they are yet)
-        int[] goodPossibilitiesIndexes = new int[9];
-
-        for (int valIndex = 0; valIndex < 9; valIndex++)
-        {
-            if (individualPossibilitiesCount[valIndex] != count)
-                individualPossibilitiesCount[valIndex] = 0;
-            else
-                goodPossibilitiesIndexes[++indexStep] = valIndex;  // 3, 4, 6 (for the values 4, 5, 7 respectively)
-        }
-
-        //goodPossibilitiesIndexes = condenseArray(goodPossibilitiesIndexes, indexStep);
-
-        if (indexStep >= count)     // If the number of values is less than the expected number of matches, just fail and skip.
-        {
-            Dictionary<int, List<SNode>> snodeLists = new Dictionary<int, List<SNode>>();
-            for (int i = 0; i < indexStep; i++)
-                snodeLists.Add(goodPossibilitiesIndexes[i], new List<SNode>());     // Should store {3 -> SNodes that can be 4 (index 3), 4 -> SNodes that can be 5(index 4), ... and so on}
-
-            for (int i = 0; i < goodPossibilitiesIndexes.Length; i++)
-            {
-                try
-                {
-                    for (int x = 0; x < 9; x++)     // Goes through all 9 SNodes in set
-                    if (!set[x].isSolved && set[x].possibles[goodPossibilitiesIndexes[i]])
-                        snodeLists[goodPossibilitiesIndexes[i]].Add(set[x]);
-                }
-#pragma warning disable CS0168 // Variable is declared but never used
-                catch (KeyNotFoundException knfe)
-#pragma warning restore CS0168 // Variable is declared but never used
-                {
-                    break;
-                }
-                
-            }
-            
-            int[] heldIndices = new int[count];     // Should store {0, 1}, then {0, 2}, then {1, 2}, as a 3 choose 2 iteration, etc for 4 choose 2, 4 choose 3, etc again
-            int numPossibles = indexStep;
-            int currIndex = count - 1;
-            bool exitLoop = false;
-
-            for (int i = 0; i < count; i++)
-                heldIndices[i] = i;
-
-            do
-            {
-                // Check current heldIndices
-                if (heldIndicesAreSame(heldIndices, goodPossibilitiesIndexes, snodeLists))
-                {
-                    // SUCCESS, we can remove all non-believers!!!
-                    // (all possibles from these indexes that don't match the pairs of goodPossibles expected)
-                    
-                    SNode[] valuableList = snodeLists[goodPossibilitiesIndexes[heldIndices[0]]].ToArray();
-
-                    bool[] truthMask = new bool[9];
-
-                    for (int i = 0; i < count; i++)
-                        truthMask[goodPossibilitiesIndexes[heldIndices[i]]] = true;
-
-                    foreach (SNode sn in valuableList)
-                    {
-                        // for each node, truthMask will replace the original possibilities array
-                        for (int i = 0; i < 9; i++)
-                        {
-                            if (!truthMask[i] && sn.possibles[i])
-                                changeOccurred = true;
-
-                            sn.possibles[i] = truthMask[i];
-                        }
-                    }
-
-                    break;
-                }
-
-                while (heldIndices[currIndex] == numPossibles - 1 || (currIndex < count - 1 && heldIndices[currIndex] + 1 == heldIndices[currIndex + 1]))
-                {
-                    // This means that the current index is as far right as it can go.
-                    currIndex--;
-                    if (currIndex < 0)
-                        break;
-                }
-
-                if (currIndex < 0)  // List is iterated all the way through
-                    break;
-
-                heldIndices[currIndex]++;
-
-                // Update all trailing indices to follow currIndex
-                for (int i = currIndex + 1; i < numPossibles - 1; i++)
-                    heldIndices[i] = heldIndices[i - 1] + 1;
-
-                currIndex = count - 1;
-
-            } while (!exitLoop);
-            
-        }
-
-        return changeOccurred;
+        backup = board.ToString();
     }
 
     /// <summary>
-    /// Takes the list of goodPossibles, and ONLY using the subset of that required for count, check to see a single snap shot of all required iterations to check if are same.
+    /// Retrieve data of Sudoku Board when it was at 100% accuracy with no guesses.
     /// </summary>
-    /// <param name="heldIndices"></param>
-    /// <param name="goodPossibleIndexes"></param>
-    /// <param name="snodeLists"></param>
-    /// <returns></returns>
-    private static bool heldIndicesAreSame(int[] heldIndices, int[] goodPossibleIndexes, Dictionary<int, List<SNode>> snodeLists)
-    {
-        List<SNode> comparingList = snodeLists[goodPossibleIndexes[heldIndices[0]]];
+    //private static void RetractSudokuBoardState()
+    //{
+    //    board = new SudokuBoard(backup.Sudoku);
+    //
+    //    guessPlaced = false;
+    //} //RetractSudokuBoardState()
 
-        for (int i = 1; i < heldIndices.Length; i++)
-        {
-            if (!twoArraysAreSame(snodeLists[goodPossibleIndexes[heldIndices[i]]].ToArray(), comparingList.ToArray()))
-                return false;
-        }
+        private static void RetractSudokuBoardState()
+    {
+        board = new SudokuBoard(backup);
+
         
-        return true;
-    } // heldIndicesAreSame()
+
+        guessPlaced = false;
+    }
 
     /// <summary>
-    /// Checks to see if each array contains the same SNodes in the list. Each, in theory, should always have the same count.
+    /// Finds the first SNode with the least number of possible numbers and guesses one of it's remaining numbers.
     /// </summary>
-    /// <param name="list1"></param>
-    /// <param name="list2"></param>
-    /// <returns></returns>
-    private static bool twoArraysAreSame(SNode[] list1, SNode[] list2)
+    private static void GuessValue()
     {
-        for (int i = 0; i < list1.Length; i++)
+        // Find a SNode with the least possibles, make a guess, store the currently guessed SNode and the value attempted.
+        #region List SNodes with least amount of possibles
+        int possCount = 2;
+        sNodesWithLeastPossibles = new OrderedSet<SNode>();
+
+        while (possCount <= setSize)
         {
-            if (!list1[i].Equals(list2[i]))
-                return false;
+            foreach (SNode sNode in board.Sudoku)
+            {
+                if (sNode.PossiblesCount() == possCount)
+                    sNodesWithLeastPossibles.Add(sNode);
+            }
+
+            if (sNodesWithLeastPossibles.Count == 0)
+                possCount++;
+            else
+                break;
+        }
+        #endregion
+
+        #region Pick SNode from List
+        foreach (SNode sNode in sNodesWithLeastPossibles)
+        {
+            guessedNode = sNode;
+            guessedValue = 0;
+            string coord = "" + guessedNode.columnIndex + guessedNode.rowIndex;
+
+            foreach (int value in sNode.Possibles)
+            {
+                if (!attemptedGuesses.ContainsKey(coord) || !attemptedGuesses[coord].Contains(value))
+                {
+                    guessedValue = value;
+                    break;
+                }
+
+                if (guessedValue > 0)
+                    break;
+            }
+        }
+        #endregion
+
+        guessedNode.ApplyValue(guessedValue);
+
+        guessPlaced = true;
+    } // GuessValue()
+
+    /// <summary>
+    /// Checks if an SNode can't be any numbers.
+    /// </summary>
+    /// <returns></returns>
+    private static bool Contradiction()
+    {
+        foreach (SNode sNode in board.Sudoku)
+        {
+            if (!sNode.IsSolved && sNode.PossiblesCount() == 0)
+                return true;
         }
 
-        return true;
-    } //twoArraysAreSame()
-
+        return false;
+    } // Contradiction()
     #endregion
 
-    #region Attempt
-
     /// <summary>
-    /// If a single node can ONLY be one number, assign that number to the int named value, and null out the bool[] named possibles.
+    /// Check for Naked Singles: if any plug the number into the SNode.
     /// </summary>
-    private static bool OnlyPossibleOnNode(int x, int y)
+    /// <returns></returns>
+    private static bool NakedSingle()
     {
-        bool changeOccurred = false;
-        int count = 0;
-        int spot = 0;
+        bool progress = false;
+        bool boardUpdated = false;
 
-        if (!sudoku[x, y].isSolved)
+        foreach (SNode sNode in board.Sudoku)
         {
-            for (int i = 0; i < ((width / 3) * (height / 3)); i++)
+            boardUpdated = false;
+            int value = 0;
+
+            if (sNode.PossiblesCount() == 1)
             {
-                if (sudoku[x, y].possibles[i])
+                value = sNode.Possibles[0];
+                sNode.ApplyValue(value);
+                boardUpdated = true;
+                progress = true;
+            }
+
+            if (boardUpdated)
+            {
+                if (controller != null)
                 {
-                    count++;
-                    spot = i;
+                    string output = "Updated board with Naked Single Solve. " + value + " was used at Node Index {" + (sNode.columnIndex + 1) + ", " + (sNode.rowIndex + 1) + "}.";
+                    controller.PrintStatement(output);
                 }
             }
-
-            if (count == 1)
-            {
-                ApplyValue(sudoku[x, y], spot + 1);
-                changeOccurred = true;
-            }
         }
 
-        return changeOccurred;
-    } // OnlyPossibleOnNode()
+        return progress;
+    } // NakedSingle()
 
     /// <summary>
-    /// If a single node ON a single line or box is the ONLY node that can be some number, assign that number to the int named value, and null out the bool[] named possibles.
+    /// Finds Pointing Pairs.
     /// </summary>
-    private static bool OnlyPossibleInSet(SNode[] set)
+    /// <returns></returns>
+    private static bool PointingPair()
     {
-        bool changeOccurred = false;
-        int count = 0;
-        int spot = 0;
-        SNode onlyNode = null;
-
-        // Try each Value
-        for (int vIndex = 0; vIndex < ((width / 3) * (height / 3)); vIndex++)
+        foreach (Box box in board.Boxes)
         {
-            int value = vIndex + 1;
+            SudokuSet shrunkenBox = box.Trim();
 
-            count = 0;
-
-            foreach (SNode sn in set)
+            foreach (int value in sudokuNumbers)
             {
-                if (!sn.isSolved && sn.possibles[vIndex])
+                OrderedSet<Row> rows = new OrderedSet<Row>();
+                OrderedSet<Column> cols = new OrderedSet<Column>();
+
+                foreach (SNode sNode in shrunkenBox)
                 {
-                    count++;
-                    spot = vIndex;
-                    onlyNode = sn;
+                    if (sNode.Possibles.Contains(value))
+                    {
+                        rows.Add(sNode.Row);
+                        cols.Add(sNode.Column);
+                    }
+                }
+
+                bool boardUpdated = false;
+
+                if (rows.Count == 1)
+                {
+                    Row row = rows[0];
+                    foreach (SNode sNode in row)
+                    {
+                        if (sNode.Box != box && sNode.Possibles.Contains(value))
+                        {
+                            sNode.Possibles.Remove(value);
+                            boardUpdated = true;
+                        }
+                    }
+                }
+
+                if (cols.Count == 1)
+                {
+                    Column column = cols[0];
+                    foreach (SNode sNode in column)
+                    {
+                        if (sNode.Box != box && sNode.Possibles.Contains(value))
+                        {
+                            sNode.Possibles.Remove(value);
+                            boardUpdated = true;
+                        }
+                    }
+                }
+
+                if (boardUpdated)
+                {
+                    if (controller != null)
+                    {
+                        string output = "Updated board with Pointing Pair Reduction. " + value + " was used.";
+                        controller.PrintStatement(output);
+                    }
+
+                    return true;
                 }
             }
-
-            if (count == 1 && onlyNode.possibles[vIndex])
-            {
-                ApplyValue(onlyNode, value);
-                changeOccurred = true;
-            }
         }
 
-        return changeOccurred;
-    } // OnlyPossibleInSet()
+        return false;
+    } // PointingPair()    ** COVERED BY NAKED PAIR.....THIS TECHNIQUE IS STUPID!!!!!
 
     /// <summary>
-    /// Applies the value to the node when it is the only possible result.
+    /// Finds Line/Box Reductions.
     /// </summary>
-    /// <param name="n">node</param>
-    /// <param name="v">value</param>
-    private static void ApplyValue(SNode n, int v)
+    /// <returns></returns>
+    private static bool LineBoxReduction()
     {
-        // Set value on SNode
-        n.value = v;
-        n.possibles = null;
-        n.isSolved = true;
+        bool boardUpdated = false;
 
+        List<SNode> shared;
+        List<SNode> lineOnly;
+        List<SNode> boxOnly;
 
-        // Adjust all nodes in row, column, and box [based on this change].
-        int valIndex = v - 1;
-        foreach (SNode s in n.row)
+        foreach (Box b in board.Boxes)
         {
-            if (s != n && !s.isSolved && s.possibles[valIndex])
+            bool sharedPossible;
+            bool linePossible;
+            bool boxPossible;
+
+            foreach (Column c in b.linkedColumns)
             {
-                s.possibles[valIndex] = false;
-                s.possRem--;
+                shared = new List<SNode>();
+                lineOnly = new List<SNode>();
+                boxOnly = new List<SNode>();
+
+                # region Fill Sets
+                foreach (SNode n in b)
+                {
+                    if (c.Contains(n))
+                        shared.Add(n);
+                    else
+                        boxOnly.Add(n);
+                }
+                foreach (SNode n in c)
+                {
+                    if (b.Contains(n))
+                        shared.Add(n);
+                    else
+                        lineOnly.Add(n);
+                }
+                #endregion
+
+                #region Iterate through and check
+                foreach (int value in sudokuNumbers)
+                {
+                    sharedPossible = false;
+                    linePossible = false;
+                    boxPossible = false;
+
+                    #region Check which sets contain possibility of using a Sudoku Number
+                    foreach (SNode node in shared)
+                    {
+                        if (node.Possibles.Contains(value))
+                            sharedPossible = true;
+                    }
+
+                    foreach (SNode node in lineOnly)
+                    {
+                        if (node.Possibles.Contains(value))
+                            linePossible = true;
+                    }
+
+                    foreach (SNode node in boxOnly)
+                    {
+                        if (node.Possibles.Contains(value))
+                            boxPossible = true;
+                    }
+                    #endregion
+
+                    #region Check truthfulness
+                    if (sharedPossible)
+                    {
+                        if (linePossible && !boxPossible)
+                        {
+                            // Remove Possible from lineOnly nodes.
+                            foreach (SNode node in lineOnly)
+                            {
+                                node.Possibles.Remove(value);
+                            }
+
+                            boardUpdated = true;
+                            break;
+                        }
+                        else if (boxPossible && !linePossible)
+                        {
+                            // Remove Possibles from boxOnly nodes.
+                            foreach (SNode node in boxOnly)
+                            {
+                                node.Possibles.Remove(value);
+                            }
+
+                            boardUpdated = true;
+                            break;
+                        }
+                    }
+                    #endregion
+
+                    if (boardUpdated)
+                    {
+                        if (controller != null)
+                        {
+                            string output = "Updated board with Line/Box Reduction. " + value + " was used on Box " + b.Index + " with Column " + c.Index + ".";
+                            controller.PrintStatement(output);
+                        }
+
+                        return true;
+                    }
+                }
+            }
+            #endregion
+
+            foreach (Row r in b.linkedRows)
+            {
+                shared = new List<SNode>();
+                lineOnly = new List<SNode>();
+                boxOnly = new List<SNode>();
+
+                #region Fill Sets
+                foreach (SNode n in b)
+                {
+                    if (r.Contains(n))
+                        shared.Add(n);
+                    else
+                        boxOnly.Add(n);
+                }
+                foreach (SNode n in r)
+                {
+                    if (b.Contains(n))
+                        shared.Add(n);
+                    else
+                        lineOnly.Add(n);
+                }
+                #endregion
+
+                #region Iterate through and check
+                foreach (int value in sudokuNumbers)
+                {
+                    sharedPossible = false;
+                    linePossible = false;
+                    boxPossible = false;
+
+                    #region Check which sets contain possibility of using a Sudoku Number
+                    foreach (SNode node in shared)
+                    {
+                        if (node.Possibles.Contains(value))
+                            sharedPossible = true;
+                    }
+
+                    foreach (SNode node in lineOnly)
+                    {
+                        if (node.Possibles.Contains(value))
+                            linePossible = true;
+                    }
+
+                    foreach (SNode node in boxOnly)
+                    {
+                        if (node.Possibles.Contains(value))
+                            boxPossible = true;
+                    }
+                    #endregion
+
+                    #region Check truthfulness
+                    if (sharedPossible)
+                    {
+                        if (linePossible && !boxPossible)
+                        {
+                            // Remove Possible from lineOnly nodes.
+                            foreach (SNode node in lineOnly)
+                            {
+                                node.Possibles.Remove(value);
+                            }
+
+                            boardUpdated = true;
+                            break;
+                        }
+                        else if (boxPossible && !linePossible)
+                        {
+                            // Remove Possibles from boxOnly nodes.
+                            foreach (SNode node in boxOnly)
+                            {
+                                node.Possibles.Remove(value);
+                            }
+
+                            boardUpdated = true;
+                            break;
+                        }
+                    }
+                    #endregion
+
+                    if (boardUpdated)
+                    {
+                        if (controller != null)
+                        {
+                            string output = "Updated board with Line/Box Reduction. " + value + " was used on Box " + b.Index + " with Row " + r.Index +  ".";
+                            controller.PrintStatement(output);
+                        }
+
+                        return true;
+                    }
+                }
+                #endregion
             }
         }
+        return false;
+    } // LineBoxReduction()
 
-        foreach (SNode s in n.column)
+    /// <summary>
+    /// Looping structure for solving Naked Sets.  Uses CombinationNoRepitition to check all chances.
+    /// </summary>
+    /// <returns></returns>
+    private static bool SetLoop()
+    {
+        int[] easinessRating = { 8, 2, 7, 3, 6, 4, 5 };
+        /*
+            Variable of easinessRating depends on how long the loops may need to run
+            1. Easiest:         8                               (~100 loops)
+            2. Moderate:    2 and 7                     (~1300 loops)
+            3. Hard:            3 and 6                     (~7000 loops)
+            4. Hardest:       4 and 5                     (~16000 loops)
+        */
+
+        for (int place = 0; place < easinessRating.Length; place++)
         {
-            if (s != n && !s.isSolved && s.possibles[valIndex])
-            {
-                s.possibles[valIndex] = false;
-                s.possRem--;
-            }
+            if (NakedHiddenSet(easinessRating[place]))
+                return true;
         }
 
-        foreach (SNode s in n.box)
-        {
-            if (s != n && !s.isSolved && s.possibles[valIndex])
-            {
-                s.possibles[valIndex] = false;
-                s.possRem--;
-            }
-        }
-    } // ApplyValue()
+        return false;
+    } // SetLoop()
 
+    /// <summary>
+    /// Using the size provided from the parameter, finds Naked sets of that size.
+    /// IE: Size 1 is a Naked Single, Size 3 is a Naked Triplet, and Size 8 is a Naked Octet (AKA Hidden Single)
+    /// </summary>
+    /// <param name="size"></param>
+    /// <returns></returns>
+    private static bool NakedHiddenSet(int size)
+    {
+        foreach (SudokuSet set in board.Sets)
+        {
+            int shrunkenSetSize = set.UnsolvedValues.Count;
+            int numCount = shrunkenSetSize - size;
+            if (numCount <= 0 || shrunkenSetSize == 0)
+                continue;
+
+            SudokuSet shrunkenSet = set.Trim();
+
+            #region Nodes
+            CombinationNoRepetition<SNode> proposedSetOfSudokuNodes = new CombinationNoRepetition<SNode>(shrunkenSet, size);
+            #endregion
+
+            #region Numbers
+            CombinationNoRepetition<int> proposedSudokuNumbers = new CombinationNoRepetition<int>(set.UnsolvedValues, numCount);
+            #endregion
+
+            // the "IterateNext()" code will need to be inside of a continuable nested loop
+            do
+            {
+                OrderedSet<SNode> chosenSudokuNodes = proposedSetOfSudokuNodes.IterateNext();
+
+                // Checks if there are any more iterations to contend; if null, exit out
+                if (chosenSudokuNodes == null)
+                    break;
+
+                // Otherwise continue, and enter next loop
+                do
+                {
+                    OrderedSet<int> chosenSudokuNumbers = proposedSudokuNumbers.IterateNext();
+
+                    // Checks if there are any more iterations to contend; if null, exit out
+                    if (chosenSudokuNumbers == null)
+                        break;
+
+                    // Otherwise continue, and perform comparison
+                    bool passThrough = false;
+                    foreach (SNode sNode in chosenSudokuNodes)
+                    {
+                        // check if chosenNode can't be any of the chosenNumbers
+                        foreach (int value in chosenSudokuNumbers)
+                        {
+                            if (sNode.Possibles.Contains(value))
+                            {
+                                passThrough = true;
+                                break;
+                            }
+                        }
+
+                        if (passThrough)
+                            break;
+                    }
+
+                    if (passThrough)
+                        continue;
+
+                    bool boardUpdated = false;
+
+                    // It Passed...let's solve
+                    #region Build unchosenLists
+                    OrderedSet<SNode> unchosenSudokuNodes = new OrderedSet<SNode>();
+                    OrderedSet<int> unchosenSudokuNumbers = new OrderedSet<int>();
+                    foreach (SNode sNode in shrunkenSet)
+                    {
+                        if (!chosenSudokuNodes.Contains(sNode))
+                            unchosenSudokuNodes.Add(sNode);
+                    }
+                    foreach (int i in set.UnsolvedValues)
+                    {
+                        if (!chosenSudokuNumbers.Contains(i))
+                            unchosenSudokuNumbers.Add(i);
+                    }
+                    #endregion
+
+                    foreach (SNode sNode in unchosenSudokuNodes)
+                    {
+                        foreach (int value in unchosenSudokuNumbers)
+                        {
+                            if (sNode.Possibles.Contains(value))
+                            {
+                                sNode.Possibles.Remove(value);
+                                boardUpdated = true;
+                            }
+                        }
+                    }
+
+                    if (boardUpdated)
+                    {
+                        if (controller != null)
+                        {
+                            string numbers = "";
+                            string style = "";
+                            int adjustedSize = 0;
+                            if (size * 2 < shrunkenSet.Count)
+                            {
+                                // Naked Sets
+                                foreach (int number in unchosenSudokuNumbers)
+                                    numbers += number + ", ";
+                                style = "Naked";
+                                adjustedSize = size;
+                            }
+                            else
+                            {
+                                // Hidden Sets
+                                foreach (int number in chosenSudokuNumbers)
+                                    numbers += number + ", ";
+                                style = "Hidden";
+                                adjustedSize = shrunkenSetSize - size;
+                            }
+                            string n = numbers.Substring(0, numbers.Length - 2);
+                            string output = "Updated board with " + style + " " + adjustedSize + ".  " + set.GetType() + " " + set.Index + " Reduction:  Numbers " + n + " were used.";
+                            controller.PrintStatement(output);
+                        }
+
+                        return true;
+                    }
+
+                } while (true);
+            } while (true);
+        }
+
+        return false;
+    } // Naked/HiddenSet()
+
+    /// <summary>
+    /// Loops through XWing solve for Rows->Columns and Columns->Rows.
+    /// </summary>
+    /// <returns></returns>
+    private static bool XWingLoop()
+    {
+        if (XWing(board.Rows, board.Columns))
+            return true;
+
+        if (XWing(board.Columns, board.Rows))
+            return true;
+
+        return false;
+    } // XWingLoop()
+
+    /// <summary>
+    /// Occurs when 2 rows share the same 2 columns, and not the other 7, that can be a certain number; all other spaces in those 2 columns CAN'T be this number now.
+    /// </summary>
+    /// <param name="primarySets"></param>
+    /// <param name="type"></param>
+    /// <returns></returns>
+    private static bool XWing(OrderedSet<SudokuSet> primarySets, OrderedSet<SudokuSet> secondarySets)
+    {
+        #region Lines
+        CombinationNoRepetition<SudokuSet> proposedSetOfSudokuLines = new CombinationNoRepetition<SudokuSet>(primarySets, 2);
+        #endregion
+
+        do
+        {
+            OrderedSet<SudokuSet> chosenSudokuLines = proposedSetOfSudokuLines.IterateNext();
+
+            if (chosenSudokuLines == null)
+                return false;
+
+            List<SudokuSet> listOfLines = new List<SudokuSet>();
+            foreach (SudokuSet line in chosenSudokuLines)
+                listOfLines.Add(line.Trim());
+
+            for (int value = 1; value <= setSize; value++)
+            {
+                OrderedSet<SudokuSet> secondaryLines = new OrderedSet<SudokuSet>();
+
+                List<SNode> listOfXWingSNodes = new List<SNode>();
+
+                // Check each space in the first line
+                foreach (SNode sNode in listOfLines[0])
+                {
+                    if (sNode.Possibles.Contains(value))
+                    {
+                        foreach (SudokuSet secondaryLine in secondarySets)
+                        {
+                            if (secondaryLine.Contains(sNode))
+                            {
+                                secondaryLines.Add(secondaryLine);
+                                break;
+                            }
+                        }
+
+                        listOfXWingSNodes.Add(sNode);
+                    }
+                }
+
+                if (secondaryLines.Count != 2)
+                    continue;
+                int count = 0;
+
+                // Check each space in the second line
+                foreach (SNode sNode in listOfLines[1])
+                {
+                    if (sNode.Possibles.Contains(value))
+                    {
+                        foreach (SudokuSet secondaryLine in secondarySets)
+                        {
+                            if (secondaryLine.Contains(sNode))
+                            {
+                                if (!secondaryLines.Add(secondaryLine))
+                                    count++;
+                                break;
+                            }
+                        }
+
+                        listOfXWingSNodes.Add(sNode);
+                    }
+                }
+
+                if (secondaryLines.Count != 2 || count != 2)
+                    continue;
+                else
+                {
+                    // Success!!!  Remove impossibles.
+                    bool boardUpdated = false;
+
+                    foreach (SudokuSet secondaryLine in secondaryLines)
+                    {
+                        foreach (SNode sNode in secondaryLine.Trim())
+                        {
+                            if (!listOfXWingSNodes.Contains(sNode) && sNode.Possibles.Contains(value))
+                            {
+                                sNode.Possibles.Remove(value);
+                                boardUpdated = true;
+                            }
+                        }
+                    }
+
+                    if (boardUpdated)
+                    {
+                        if (controller != null)
+                        {
+                            string output = "Updated board with XWing Reduction. " + value + " was used.";
+                            controller.PrintStatement(output);
+                        }
+
+                        return true;
+                    }
+                }
+            }
+            // end of loop
+        } while (true);
+    } // XWing()
     #endregion
 
     /// <summary>
@@ -536,38 +869,24 @@ public static class Solver
     /// <returns></returns>
     private static bool IsSolved()
     {
-        for (int yIndex = 0; yIndex < height; yIndex++)
+        foreach (SNode sNode in board.Sudoku)
         {
-            for (int xIndex = 0; xIndex < width; xIndex++)
-            {
-                if (!sudoku[xIndex, yIndex].isSolved)
-                    return false;
-            }
+            if (!sNode.IsSolved)
+                return false;
         }
 
         return true;
     } // IsSolved()
 
-    // FORGET PURPOSE OF THIS METHOD BELOW...
-    private static int[] condenseArray(int[] a)
-    {
-
-        return null;
-    }
-
+    /// <summary>
+    /// Prints the values of the board to console.
+    /// </summary>
     private static void printBoardData()
     {
-        for (int y = 0; y < 9; y++)
+        foreach (SNode sNode in board.Sudoku)
         {
-            for (int x = 0; x < 9; x++)
-            {
-                //
-                //
-                sudoku[x, y].PrintPossibles();
-                //
-                //
-            }
-            // Can't use print(), since this is not a MonoBehaviour
+            if (controller != null)
+                controller.PrintStatement(sNode.PrintPossibles());
         }
-    }
+    } // printBoardData()
 }
