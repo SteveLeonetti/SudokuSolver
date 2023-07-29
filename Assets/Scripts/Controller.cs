@@ -40,7 +40,7 @@ public class Controller : MonoBehaviour
         {
             // Next Update Cycle, check node
             if (leftMouseClicked)
-            {
+           {
                 foreach (UINode node in gridNodes)
                 {
                     if (node.textField.GetComponent<InputField>().isFocused)
@@ -140,8 +140,11 @@ public class Controller : MonoBehaviour
                 //
             }
         }
-
+        float startTime = Time.time;
         int[,] grid = Solver.Solve(sudokuBoard, this);
+        float endTime = Time.time;
+        float timeSpent = endTime - startTime;
+        PrintStatement(timeSpent.ToString());
         PrintGrid(grid);
     }
 

@@ -1,5 +1,4 @@
-﻿using System;
-using UnityEngine;
+﻿using UnityEngine;
 
 public class BuildBoard : MonoBehaviour
 {
@@ -56,7 +55,7 @@ public class BuildBoard : MonoBehaviour
         numBoxGrid[width - 1, height - 1].SetNextNode(numBoxGrid[0, 0]);
         numBoxGrid[0, 0].SetPreviousNode(numBoxGrid[width - 1, height - 1]);
 
-        // Draw Button
+        // Build Button
 
 
         // Build Controller
@@ -67,7 +66,6 @@ public class BuildBoard : MonoBehaviour
 
     public static void GUIDrawRect(Rect divider, Color color)
     {
-        if (_staticRectTexture == null)
             _staticRectTexture = new Texture2D(1, 1);
 
         if (_staticRectStyle == null)
